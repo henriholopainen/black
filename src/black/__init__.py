@@ -1143,7 +1143,37 @@ def format_str(src_contents: str, *, mode: Mode) -> str:
     return dst_contents
 
 
+FORMAT_START = "# _______BLACK______FORMAT_______START_______"
+FORMAT_END = "# _______BLACK______FORMAT_______END_______"
+
+
 def _format_str_once(src_contents: str, *, mode: Mode) -> str:
+    if mode.line_range:
+        src_line_breaks = [0] + [
+            m.start() + 1 for m in re.finditer(r"\n", src_contents)
+        ]
+        format_start_line = mode.line_range[0]
+        format_end_line = mode.line_range[1]
+
+        index_of_line_before_format_start = src_line_breaks[format_start_line]
+        index_of_line_after_format_end = src_line_breaks[-format_end_line]
+
+        src_before_lines = src_contents[:index_of_line_before_format_start]
+        src_format_lines = src_contents[
+            index_of_line_before_format_start:index_of_line_after_format_end
+        ]
+        src_after_lines = src_contents[index_of_line_after_format_end:]
+
+        src_contents = (
+            src_before_lines
+            + FORMAT_START
+            + "\n"
+            + src_format_lines
+            + FORMAT_END
+            + "\n"
+            + src_after_lines
+        )
+
     src_node = lib2to3_parse(src_contents.lstrip(), mode.target_versions)
     dst_blocks: List[LinesBlock] = []
     if mode.target_versions:
@@ -1166,7 +1196,17 @@ def _format_str_once(src_contents: str, *, mode: Mode) -> str:
         if supports_feature(versions, feature)
     }
     block: Optional[LinesBlock] = None
+    start_index = 0
+    end_index = 0
     for current_line in lines.visit(src_node):
+        if mode.line_range:
+            raw_line = str(current_line).strip()
+            if raw_line == FORMAT_START:
+                start_index = len(dst_blocks)
+                continue
+            elif raw_line == FORMAT_END:
+                end_index = len(dst_blocks) - 1
+                continue
         block = elt.maybe_empty_lines(current_line)
         dst_blocks.append(block)
         for line in transform_line(
@@ -1176,8 +1216,12 @@ def _format_str_once(src_contents: str, *, mode: Mode) -> str:
     if dst_blocks:
         dst_blocks[-1].after = 0
     dst_contents = []
-    for block in dst_blocks:
+    for index, block in enumerate(dst_blocks):
+        if mode.line_range and index == start_index:
+            dst_contents.append(FORMAT_START)
         dst_contents.extend(block.all_lines())
+        if mode.line_range and index == end_index:
+            dst_contents.append(FORMAT_END)
     if not dst_contents:
         # Use decode_bytes to retrieve the correct source newline (CRLF or LF),
         # and check if normalized_content has more than one line
@@ -1185,7 +1229,17 @@ def _format_str_once(src_contents: str, *, mode: Mode) -> str:
         if "\n" in normalized_content:
             return newline
         return ""
-    return "".join(dst_contents)
+    if not mode.line_range:
+        return "".join(dst_contents)
+    else:
+        dst_contents_str = "".join(dst_contents)
+        dst_formatted_start_index = dst_contents_str.index(FORMAT_START)
+        dst_formatted_end_index = dst_contents_str.index(FORMAT_END)
+        dst_contents_substr = dst_contents_str[
+            dst_formatted_start_index + len(FORMAT_START) : dst_formatted_end_index
+        ]
+
+        return src_before_lines + dst_contents_substr + src_after_lines
 
 
 def decode_bytes(src: bytes) -> Tuple[FileContent, Encoding, NewLine]:
