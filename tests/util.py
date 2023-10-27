@@ -289,10 +289,6 @@ def read_data_from_file(file_name: Path) -> Tuple[TestCaseArgs, str, str]:
                 [not bool(x.strip()) for x in source_data.split("\n")],
             ),
         )
-        # TODO: This should not be necessary, but for some reason running tests is
-        # different from processing a file
-        source_data += "\n"
-        output_data += "\n"
     return args, source_data, output_data
 
 
