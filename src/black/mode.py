@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from hashlib import sha256
 from operator import attrgetter
-from typing import Dict, Final, Set
+from typing import Dict, Final, Optional, Set, Tuple
 from warnings import warn
 
 from black.const import DEFAULT_LINE_LENGTH
@@ -211,6 +211,7 @@ class Mode:
     experimental_string_processing: bool = False
     python_cell_magics: Set[str] = field(default_factory=set)
     preview: bool = False
+    line_range: Optional[Tuple[int, int]] = None
 
     def __post_init__(self) -> None:
         if self.experimental_string_processing:

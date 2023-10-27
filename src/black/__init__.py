@@ -434,6 +434,11 @@ def validate_regex(
     callback=read_pyproject_toml,
     help="Read configuration from FILE path.",
 )
+@click.option(
+    "--lines",
+    nargs=2,
+    type=int,
+)
 @click.pass_context
 def main(  # noqa: C901
     ctx: click.Context,
@@ -463,6 +468,7 @@ def main(  # noqa: C901
     workers: Optional[int],
     src: Tuple[str, ...],
     config: Optional[str],
+    lines: Optional[Tuple[int, int]],
 ) -> None:
     """The uncompromising code formatter."""
     ctx.ensure_object(dict)
@@ -475,6 +481,11 @@ def main(  # noqa: C901
         ctx.exit(1)
     if not src and code is None:
         out(main.get_usage(ctx) + "\n\nOne of 'SRC' or 'code' is required.")
+        ctx.exit(1)
+    if lines and (not src or len(src) > 1):
+        out(
+            main.get_usage(ctx) + "\n\n'lines' can only be used with single 'SRC' file."
+        )
         ctx.exit(1)
 
     root, method = (
@@ -581,6 +592,20 @@ def main(  # noqa: C901
         )
 
         if len(sources) == 1:
+            if lines:
+                with open(next(iter(sources)), "r") as f:
+                    is_line_empty = [not x.strip() for x in f]
+                try:
+                    mode = replace(
+                        mode,
+                        line_range=calculate_line_range_parameters(
+                            lines, is_line_empty
+                        ),
+                    )
+                except ValueError as e:
+                    out(main.get_usage(ctx) + "\n\n" + str(e))
+                    ctx.exit(1)
+
             reformat_one(
                 src=sources.pop(),
                 fast=fast,
@@ -589,6 +614,12 @@ def main(  # noqa: C901
                 report=report,
             )
         else:
+            if lines:
+                out(
+                    main.get_usage(ctx)
+                    + "\n\n'lines' can only be used with single 'SRC' file."
+                )
+                ctx.exit(1)
             from black.concurrency import reformat_many
 
             reformat_many(
@@ -607,6 +638,33 @@ def main(  # noqa: C901
         if code is None:
             click.echo(str(report), err=True)
     ctx.exit(report.return_code)
+
+
+def calculate_line_range_parameters(
+    lines: Tuple[int, int], source_line_empty: List[bool]
+) -> Tuple[int, int]:
+    lines_in_file = len(source_line_empty)
+
+    # Validate the given range
+    if lines[1] > lines_in_file:
+        raise ValueError(f"Invalid --lines (source is {lines_in_file} lines).")
+    if lines[0] > lines[1]:
+        raise ValueError("Invalid --lines (start must be smaller than end).")
+    if lines[0] < 1 or lines[1] < 1:
+        raise ValueError("Invalid --lines (start and end must be >0).")
+
+    # Adjust line indices from [1,line_length] to [0,line_length-1]
+    start_line = lines[0] - 1
+    end_line = lines[1] - 1
+
+    # Extend the line range to cover all adjacent empty lines
+    while start_line > 0 and source_line_empty[start_line - 1]:
+        start_line -= 1
+    while end_line < lines_in_file - 1 and source_line_empty[end_line + 1]:
+        end_line += 1
+
+    # To keep --lines stable, we count the end index as lines from EOF
+    return (start_line, lines_in_file - end_line)
 
 
 def get_sources(

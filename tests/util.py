@@ -239,10 +239,11 @@ def get_flags_parser() -> argparse.ArgumentParser:
             " version works correctly."
         ),
     )
+    parser.add_argument("--lines", default=None, nargs=2, type=int, action="extend")
     return parser
 
 
-def parse_mode(flags_line: str) -> TestCaseArgs:
+def parse_args(flags_line: str) -> TestCaseArgs:
     parser = get_flags_parser()
     args = parser.parse_args(shlex.split(flags_line))
     mode = black.Mode(
@@ -253,6 +254,7 @@ def parse_mode(flags_line: str) -> TestCaseArgs:
         is_ipynb=args.ipynb,
         magic_trailing_comma=not args.skip_magic_trailing_comma,
         preview=args.preview,
+        line_range=args.lines,
     )
     return TestCaseArgs(mode=mode, fast=args.fast, minimum_version=args.minimum_version)
 
@@ -263,10 +265,10 @@ def read_data_from_file(file_name: Path) -> Tuple[TestCaseArgs, str, str]:
     _input: List[str] = []
     _output: List[str] = []
     result = _input
-    mode = TestCaseArgs()
+    args = TestCaseArgs()
     for line in lines:
         if not _input and line.startswith("# flags: "):
-            mode = parse_mode(line[len("# flags: ") :])
+            args = parse_args(line[len("# flags: ") :])
             continue
         line = line.replace(EMPTY_LINE, "")
         if line.rstrip() == "# output":
@@ -277,7 +279,21 @@ def read_data_from_file(file_name: Path) -> Tuple[TestCaseArgs, str, str]:
     if _input and not _output:
         # If there's no output marker, treat the entire file as already pre-formatted.
         _output = _input[:]
-    return mode, "".join(_input).strip() + "\n", "".join(_output).strip() + "\n"
+    source_data = "".join(_input).strip() + "\n"
+    output_data = "".join(_output).strip() + "\n"
+    if args.mode.line_range:
+        args.mode = replace(
+            args.mode,
+            line_range=black.calculate_line_range_parameters(
+                args.mode.line_range,
+                [not bool(x.strip()) for x in source_data.split("\n")],
+            ),
+        )
+        # TODO: This should not be necessary, but for some reason running tests is
+        # different from processing a file
+        source_data += "\n"
+        output_data += "\n"
+    return args, source_data, output_data
 
 
 def read_jupyter_notebook(subdir_name: str, name: str, data: bool = True) -> str:
