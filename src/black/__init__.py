@@ -838,8 +838,9 @@ def reformat_one(
                 src, fast=fast, write_back=write_back, mode=mode
             ):
                 changed = Changed.YES
-            if (write_back is WriteBack.YES and changed is not Changed.CACHED) or (
-                write_back is WriteBack.CHECK and changed is Changed.NO
+            if not mode.line_range and (
+                (write_back is WriteBack.YES and changed is not Changed.CACHED)
+                or (write_back is WriteBack.CHECK and changed is Changed.NO)
             ):
                 cache.write([src])
         report.done(src, changed)
