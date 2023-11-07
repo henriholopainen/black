@@ -1,5 +1,5 @@
 import re
-from typing import List, Optional, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from black.comments import FMT_OFF, FMT_ON, FMT_SKIP
 from black.lines import LinesBlock
@@ -20,6 +20,60 @@ def _validate_line_range_input(lines: Tuple[int, int], lines_in_file: int) -> No
         raise ValueError("Invalid --lines (start must be smaller than end).")
     if lines[0] < 1 or lines[1] < 1:
         raise ValueError("Invalid --lines (start and end must be >0).")
+
+
+def _validate_relevant_indentations(
+    line_numbers: Sequence[int],
+    indentations: List[int],
+    is_line_indentation_valid: List[bool],
+) -> None:
+    for line_number in line_numbers:
+        if not is_line_indentation_valid[line_number]:
+            raise ValueError("Unexpected indentations outside of given line range")
+        if indentations[line_number] == 0:
+            break
+
+
+def _validate_indentations(
+    start_line: int, end_line: int, src_lines: List[str], lines_in_file: int
+) -> None:
+    """Check that every indentation before and after (inclusive) range
+    [start_line, end_line] is either for a standalone comment, for a continuing line,
+    or the indentation is a multiple of 4. Repeat this forwards and backwards until a
+    0 level indentation is found. If we stumble upon an invalid indentation, raise an
+    error.
+    """
+    indentations = [len(line) - len(line.lstrip(" ")) for line in src_lines]
+    is_comment_line = [line.lstrip().startswith("#") for line in src_lines]
+    is_line_continuation = [False] + [
+        not bool(x := line.rstrip()) or x[-1] == "\\" for line in src_lines
+    ]
+    is_line_indentation_valid = [
+        any([indentations[x] % 4 == 0, is_comment_line[x], is_line_continuation[x]])
+        for x in range(len(src_lines))
+    ]
+    is_line_range_ok_regardless_of_indentation = all(
+        any([indentations[x] == 0, is_comment_line[x], is_line_continuation[x]])
+        for x in range(start_line - 1, end_line)
+    )
+
+    if not is_line_range_ok_regardless_of_indentation and (
+        not is_line_indentation_valid[start_line - 1]
+        or indentations[start_line - 1] != 0
+    ):
+        _validate_relevant_indentations(
+            range(start_line - 2, 0, -1),
+            indentations,
+            is_line_indentation_valid,
+        )
+    if not is_line_range_ok_regardless_of_indentation and (
+        not is_line_indentation_valid[end_line - 1] or indentations[end_line - 1] != 0
+    ):
+        _validate_relevant_indentations(
+            range(end_line, lines_in_file),
+            indentations,
+            is_line_indentation_valid,
+        )
 
 
 def _find_first_spanning_line(src_node: Node, line_number: int) -> int:
@@ -152,6 +206,12 @@ def calculate_line_range(
         lines_in_file,
         mode.preview,
     )
+
+    # We currently don't support line range formatting if we don't have sane
+    # indentations before and after our line-range-to-format until next 0 level.
+    # Fixing this would require indentation matching somewhere, and it feels like a
+    # lot of work. So for now let's fail gracefully.
+    _validate_indentations(start_line, end_line, src_lines, lines_in_file)
 
     # To keep --lines stable over iterations, we count the end index as lines from EOF
     return (start_line, lines_in_file - end_line)

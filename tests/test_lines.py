@@ -115,3 +115,39 @@ def test_lines() -> None:
                 ),
             )
     """
+
+    # Test indentation sanity
+    funky_indentation = """
+def foo ():
+   # some comment
+  if False or\\
+    True:
+    print( "foo")
+  x = 123
+"""[1:]
+    ok_ranges = [(1, 1), (1, 2), (1, 6), (2, 2), (2, 6), (3, 6), (4, 6)]
+    error_ranges = [
+        (1, 3),
+        (1, 4),
+        (1, 5),
+        (2, 3),
+        (2, 4),
+        (2, 5),
+        (3, 3),
+        (3, 4),
+        (3, 5),
+        (4, 4),
+        (4, 5),
+        (5, 5),
+        (5, 6),
+        (6, 6),
+    ]
+    for ok_range in ok_ranges:
+        calculate_line_range(ok_range, funky_indentation, mode)
+    for error_range in error_ranges:
+        did_raise = False
+        try:
+            calculate_line_range(error_range, funky_indentation, mode)
+        except ValueError:
+            did_raise = True
+        assert did_raise
