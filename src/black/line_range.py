@@ -210,8 +210,7 @@ def inject_line_range_placeholders_to_formatted_code(
         last_line_number_of_curr_block = dst_block_last_line_numbers[index]
         last_line_number_of_next_block = dst_block_last_line_numbers[index + 1]
         if (
-            line_range
-            and not start_ok
+            not start_ok
             and (
                 first_line_to_format < last_line_number_of_curr_block
                 or (
@@ -223,8 +222,7 @@ def inject_line_range_placeholders_to_formatted_code(
             dst_contents.append(FORMAT_START)
             start_ok = True
         if (
-            line_range
-            and start_ok
+            start_ok
             and not end_ok
             and (
                 (last_line_to_format < last_line_number_of_curr_block)
