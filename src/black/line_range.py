@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from black.comments import FMT_OFF, FMT_ON
 from black.mode import Mode
@@ -17,7 +17,7 @@ def _validate_line_range_input(lines: Tuple[int, int], lines_in_file: int) -> No
         raise ValueError("Invalid --lines (start and end must be >0).")
 
 
-def _find_first_line(src_node: Node, line_number: int) -> int:
+def _find_first_spanning_line(src_node: Node, line_number: int) -> int:
     """Return the line number that starts the expression containing line_number"""
     for node in src_node.post_order():
         if not node or node.type in [token.INDENT, token.DEDENT]:
@@ -38,7 +38,7 @@ def _find_first_line(src_node: Node, line_number: int) -> int:
     return line_number
 
 
-def _find_last_line(src_node: Node, line_number: int) -> int:
+def _find_last_spanning_line(src_node: Node, line_number: int) -> int:
     """Return the line number that ends the expression containing line_number"""
     for node in src_node.post_order():
         if not node or node.type in [token.INDENT, token.DEDENT]:
@@ -59,6 +59,62 @@ def _find_last_line(src_node: Node, line_number: int) -> int:
     return line_number
 
 
+def _adjust_start(
+    line: int,
+    src_lines: List[str],
+    src_line_empty: List[bool],
+    lines_in_file: int,
+    preview: bool,
+) -> int:
+    """Adjust line number so that empty lines and fmt:off are made part of our span"""
+    while (
+        line > 1 and src_line_empty[line - 2] or src_lines[line - 2].strip() in FMT_OFF
+    ):
+        line -= 1
+
+    # Preview mode currently moves ellipsis to the same line as block open
+    # if there's nothing between the comma and ellipsis, so adjust for that
+    if (
+        preview
+        and line > 1
+        and line < lines_in_file - 1
+        and "..." == src_lines[line].strip()
+        and ":" == src_lines[line - 1].strip()
+    ):
+        line -= 1
+
+    return line
+
+
+def _adjust_end(
+    line: int,
+    src_lines: List[str],
+    src_line_empty: List[bool],
+    lines_in_file: int,
+    preview: bool,
+) -> int:
+    """Adjust line number so that empty lines and fmt:on are made part of our span"""
+    while (
+        line < lines_in_file
+        and src_line_empty[line]
+        or src_lines[line].strip() in FMT_ON
+    ):
+        line += 1
+
+    # Preview mode currently moves ellipsis to the same line as block open
+    # if there's nothing between the comma and ellipsis, so adjust for that
+    if (
+        preview
+        and line > 1
+        and line < lines_in_file - 1
+        and "..." == src_lines[line].strip()
+        and ":" == src_lines[line - 1][-1].strip()
+    ):
+        line += 1
+
+    return line
+
+
 def calculate_line_range(  # noqa: C901
     lines: Tuple[int, int],
     src_contents: str,
@@ -77,41 +133,20 @@ def calculate_line_range(  # noqa: C901
         else src_node_input
     )
 
-    start_line = _find_first_line(src_node, lines[0])
-    end_line = _find_last_line(src_node, lines[1])
+    start_line = _adjust_start(
+        _find_first_spanning_line(src_node, lines[0]),
+        src_lines,
+        src_line_empty,
+        lines_in_file,
+        mode.preview,
+    )
+    end_line = _adjust_end(
+        _find_last_spanning_line(src_node, lines[1]),
+        src_lines,
+        src_line_empty,
+        lines_in_file,
+        mode.preview,
+    )
 
-    # Extend to cover neighbouring empty lines and FMT_OFF/FMT_ON comments
-    while (
-        start_line > 1
-        and src_line_empty[start_line - 2]
-        or src_lines[start_line - 2].strip() in FMT_OFF
-    ):
-        start_line -= 1
-    while (
-        end_line < lines_in_file
-        and src_line_empty[end_line]
-        or src_lines[end_line].strip() in FMT_ON
-    ):
-        end_line += 1
-
-    if mode.preview:
-        # Preview mode currently moves ellipsis to the same line as block open
-        # if there's nothing between the comma and ellipsis
-        if (
-            end_line > 1
-            and end_line < lines_in_file - 1
-            and "..." == src_lines[end_line].strip()
-            and ":" == src_lines[end_line - 1][-1].strip()
-        ):
-            end_line += 1
-        if (
-            start_line > 1
-            and start_line < lines_in_file - 1
-            and "..." == src_lines[start_line].strip()
-            and ":" == src_lines[start_line - 1].strip()
-        ):
-            start_line -= 1
-        pass
-
-    # To keep --lines stable, we count the end index as lines from EOF
+    # To keep --lines stable over iterations, we count the end index as lines from EOF
     return (start_line, lines_in_file - end_line)
