@@ -160,6 +160,8 @@ def calculate_line_range(
 def inject_line_range_placeholders_to_formatted_code(
     src_contents: str, dst_blocks: List[LinesBlock], line_range: Tuple[int, int]
 ) -> List[str]:
+    """Inject FORMAT_START and FORMAT_END to formatted code so that the markers can be
+    used to extract the formatted lines corresponding to line_range in source"""
     dst_contents: List[str] = []
 
     # Because we don't track standalone comments' line numbers in nodes, let's find
