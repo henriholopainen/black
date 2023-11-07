@@ -1156,22 +1156,23 @@ def _format_str_once(src_contents: str, *, mode: Mode) -> str:
     if dst_blocks:
         dst_blocks[-1].after = 0
     if not mode.line_range:
-        dst_contents: List[str] = []
+        dst_contents_list: List[str] = []
         for block in dst_blocks:
-            dst_contents.extend(block.all_lines())
+            dst_contents_list.extend(block.all_lines())
     else:
-        dst_contents = inject_line_range_placeholders_to_formatted_code(
+        dst_contents_list = inject_line_range_placeholders_to_formatted_code(
             src_contents, dst_blocks, mode.line_range
         )
-    if not dst_contents:
+    if not dst_contents_list:
         # Use decode_bytes to retrieve the correct source newline (CRLF or LF),
         # and check if normalized_content has more than one line
         normalized_content, _, newline = decode_bytes(src_contents.encode("utf-8"))
         if "\n" in normalized_content:
             return newline
         return ""
+    dst_contents = "".join(dst_contents_list)
     if not mode.line_range:
-        return "".join(dst_contents)
+        return dst_contents
     else:
         return combine_format_changes_to_source(
             src_contents, dst_contents, mode.line_range

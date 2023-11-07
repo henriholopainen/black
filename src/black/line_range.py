@@ -269,11 +269,10 @@ def inject_line_range_placeholders_to_formatted_code(
 
 
 def combine_format_changes_to_source(
-    src_contents: str, dst_contents_list: List[str], line_range: Tuple[int, int]
+    src_contents: str, dst_contents: str, line_range: Tuple[int, int]
 ) -> str:
-    """Combine start and end from source with formatted span marked by FORMAT_START
-    and FORMAT_END in dst_contents_list"""
-    dst_contents = "".join(dst_contents_list)
+    """Combine start and end from src_contents with formatted lines marked by
+    FORMAT_START and FORMAT_END in dst_contents"""
     formatted_changes = dst_contents[
         dst_contents.index(FORMAT_START)
         + len(FORMAT_START) : dst_contents.index(FORMAT_END)
