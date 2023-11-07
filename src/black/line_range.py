@@ -170,8 +170,7 @@ def inject_line_range_placeholders_to_formatted_code(
         if (
             line.startswith("#")
             # TODO: this should be revisited if PR #3978 gets accepted
-            or list(FMT_SKIP)[0][2:] in line
-            or list(FMT_SKIP)[1][2:] in line
+            or any(line.strip().endswith(skip) for skip in FMT_SKIP)
         )
     ]
 
