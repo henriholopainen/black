@@ -8,6 +8,15 @@ from blib2to3.pgen2 import token
 from blib2to3.pytree import Node
 
 
+def _validate_line_range_input(lines: Tuple[int, int], lines_in_file: int) -> None:
+    if lines[1] > lines_in_file:
+        raise ValueError(f"Invalid --lines (source is {lines_in_file} lines).")
+    if lines[0] > lines[1]:
+        raise ValueError("Invalid --lines (start must be smaller than end).")
+    if lines[0] < 1 or lines[1] < 1:
+        raise ValueError("Invalid --lines (start and end must be >0).")
+
+
 def calculate_line_range(  # noqa: C901
     lines: Tuple[int, int],
     src_contents: str,
@@ -18,13 +27,7 @@ def calculate_line_range(  # noqa: C901
     src_lines = src_contents.split("\n")
     src_line_empty = [not x.strip() for x in src_lines]
 
-    # Validate the given range
-    if lines[1] > lines_in_file:
-        raise ValueError(f"Invalid --lines (source is {lines_in_file} lines).")
-    if lines[0] > lines[1]:
-        raise ValueError("Invalid --lines (start must be smaller than end).")
-    if lines[0] < 1 or lines[1] < 1:
-        raise ValueError("Invalid --lines (start and end must be >0).")
+    _validate_line_range_input(lines, lines_in_file)
 
     src_node = (
         lib2to3_parse(src_contents.lstrip(), mode.target_versions)
