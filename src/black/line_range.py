@@ -162,30 +162,18 @@ def inject_line_range_placeholders_to_formatted_code(
 ) -> List[str]:
     dst_contents: List[str] = []
 
-    start_ok, end_ok = False, False
-    src_line_count = src_contents.count("\n")
-    first_line_to_format = line_range[0]
-    last_line_to_format = src_line_count - line_range[1]
-
-    src_content_lines = [x.strip() for x in src_contents.split("\n")]
-    standalone_comments = [
-        x
-        for x in src_content_lines
+    # Because we don't track standalone comments' line numbers in nodes, let's find
+    # them from the source
+    standalone_comment_line_numbers = [
+        index + 1  # Adjust to line_span range [1, line_count]
+        for index, line in enumerate([x.strip() for x in src_contents.split("\n")])
         if (
-            x.startswith("#")
-            or list(FMT_SKIP)[0][2:] in x
-            or list(FMT_SKIP)[1][2:] in x
+            line.startswith("#")
+            # TODO: this should be revisited if PR #3978 gets accepted
+            or list(FMT_SKIP)[0][2:] in line
+            or list(FMT_SKIP)[1][2:] in line
         )
     ]
-    standalone_comment_line_numbers: List[int] = []
-
-    standalone_comment_index = 0
-    for src_content_line_index, src_content_line in enumerate(src_content_lines):
-        if standalone_comment_index >= len(standalone_comments):
-            break
-        if src_content_line == standalone_comments[standalone_comment_index]:
-            standalone_comment_line_numbers.append(src_content_line_index + 1)
-            standalone_comment_index += 1
 
     dst_block_lines: List[List[str]] = []
     dst_block_last_line_numbers: List[int] = []
@@ -205,6 +193,9 @@ def inject_line_range_placeholders_to_formatted_code(
     dst_block_last_line_numbers.append(-1)
     dst_block_lines.append([])
 
+    start_ok, end_ok = False, False
+    first_line_to_format = line_range[0]
+    last_line_to_format = src_contents.count("\n") - line_range[1]
     for index in range(len(dst_blocks)):
         block_lines = dst_block_lines[index]
         last_line_number_of_curr_block = dst_block_last_line_numbers[index]
