@@ -35,7 +35,7 @@ from pathspec.patterns.gitwildmatch import GitWildMatchPatternError
 
 from _black_version import version as __version__
 from black.cache import Cache
-from black.comments import FMT_OFF, FMT_ON, normalize_fmt_off
+from black.comments import FMT_OFF, FMT_ON, FMT_SKIP, normalize_fmt_off
 from black.const import (
     DEFAULT_EXCLUDES,
     DEFAULT_INCLUDES,
@@ -67,6 +67,7 @@ from black.mode import FUTURE_FLAG_TO_FEATURE, VERSION_TO_FEATURES, Feature
 from black.mode import Mode as Mode  # re-exported
 from black.mode import TargetVersion, supports_feature
 from black.nodes import (
+    STANDALONE_COMMENT,
     STARS,
     following_leaf,
     is_number_token,
@@ -1225,32 +1226,6 @@ FORMAT_END = "# _______BLACK______FORMAT_______END_______"
 
 
 def _format_str_once(src_contents: str, *, mode: Mode) -> str:  # noqa: C901
-    if mode.line_range:
-        src_line_breaks = [0] + [
-            m.start() + 1 for m in re.finditer(r"\n", src_contents)
-        ]
-        format_start_line = mode.line_range[0]
-        format_end_line = mode.line_range[1]
-
-        index_of_line_before_format_start = src_line_breaks[format_start_line]
-        index_of_line_after_format_end = src_line_breaks[-format_end_line]
-
-        src_before_lines = src_contents[:index_of_line_before_format_start]
-        src_format_lines = src_contents[
-            index_of_line_before_format_start:index_of_line_after_format_end
-        ]
-        src_after_lines = src_contents[index_of_line_after_format_end:]
-
-        src_contents = (
-            src_before_lines
-            + FORMAT_START
-            + "\n"
-            + src_format_lines
-            + FORMAT_END
-            + "\n"
-            + src_after_lines
-        )
-
     src_node = lib2to3_parse(src_contents.lstrip(), mode.target_versions)
     dst_blocks: List[LinesBlock] = []
     if mode.target_versions:
@@ -1273,17 +1248,7 @@ def _format_str_once(src_contents: str, *, mode: Mode) -> str:  # noqa: C901
         if supports_feature(versions, feature)
     }
     block: Optional[LinesBlock] = None
-    start_index = 0
-    end_index = 0
     for current_line in lines.visit(src_node):
-        if mode.line_range:
-            raw_line = str(current_line).strip()
-            if raw_line == FORMAT_START:
-                start_index = len(dst_blocks)
-                continue
-            elif raw_line == FORMAT_END:
-                end_index = len(dst_blocks) - 1
-                continue
         block = elt.maybe_empty_lines(current_line)
         dst_blocks.append(block)
         for line in transform_line(
@@ -1293,12 +1258,110 @@ def _format_str_once(src_contents: str, *, mode: Mode) -> str:  # noqa: C901
     if dst_blocks:
         dst_blocks[-1].after = 0
     dst_contents = []
-    for index, block in enumerate(dst_blocks):
-        if mode.line_range and index == start_index:
+
+    start_ok, end_ok = False, False
+    src_line_count = src_contents.count("\n")
+    first_line_to_format = mode.line_range[0] if mode.line_range else sys.maxsize
+    last_line_to_format = (
+        src_line_count - mode.line_range[1] if mode.line_range else sys.maxsize
+    )
+
+    src_content_lines = [x.strip() for x in src_contents.split("\n")]
+    standalone_comments = [
+        x
+        for x in src_content_lines
+        if (
+            x.startswith("#")
+            or list(FMT_SKIP)[0][2:] in x
+            or list(FMT_SKIP)[1][2:] in x
+        )
+    ]
+    standalone_comment_line_numbers: List[int] = []
+
+    standalone_comment_index = 0
+    for src_content_line_index, src_content_line in enumerate(src_content_lines):
+        if standalone_comment_index >= len(standalone_comments):
+            break
+        if src_content_line == standalone_comments[standalone_comment_index]:
+            standalone_comment_line_numbers.append(src_content_line_index + 1)
+            standalone_comment_index += 1
+
+    dst_block_lines: List[List[str]] = []
+    dst_block_last_line_numbers: List[int] = []
+
+    for dst_block in dst_blocks:
+        dst_block_line_numbers = [x.lineno for x in dst_block.original_line.leaves]
+        last_line_number = max(dst_block_line_numbers)
+        if dst_block.original_line.leaves[0].type == STANDALONE_COMMENT:
+            # Standalone comment, possibly multiple lines
+            last_line_number = (
+                standalone_comment_line_numbers.pop(0)
+                + dst_block.content_lines[0].count("\n")
+                - 1
+            )
+        dst_block_last_line_numbers.append(last_line_number)
+        dst_block_lines.append(dst_block.all_lines())
+    dst_block_last_line_numbers.append(-1)
+    dst_block_lines.append([])
+
+    for index in range(len(dst_blocks)):
+        block_lines = dst_block_lines[index]
+        last_line_number_of_curr_block = dst_block_last_line_numbers[index]
+        last_line_number_of_next_block = dst_block_last_line_numbers[index + 1]
+        if (
+            mode.line_range
+            and not start_ok
+            and (
+                first_line_to_format < last_line_number_of_curr_block
+                or (
+                    first_line_to_format == last_line_number_of_curr_block
+                    and last_line_number_of_next_block != last_line_number_of_curr_block
+                )
+            )
+        ):
             dst_contents.append(FORMAT_START)
-        dst_contents.extend(block.all_lines())
-        if mode.line_range and index == end_index:
+            start_ok = True
+        if (
+            mode.line_range
+            and start_ok
+            and not end_ok
+            and (
+                (last_line_to_format < last_line_number_of_curr_block)
+                or (
+                    last_line_to_format == last_line_number_of_curr_block
+                    and last_line_number_of_next_block != last_line_number_of_curr_block
+                )
+            )
+        ):
+            if last_line_to_format == last_line_number_of_curr_block:
+                dst_contents.extend(block_lines)
+                block_lines.clear()
+            else:
+                consumed_empty_lines = 0
+                is_standalone_comment_line = dst_block_lines[index][1].strip()[0] == "#"
+                if is_standalone_comment_line:
+                    dst_contents.append(block_lines[0])
+                    comment_lines = block_lines[1].split("\n")
+                    comment_lines_count = len(comment_lines) - 1
+                    comment_lines_to_consume = last_line_to_format - (
+                        last_line_number_of_curr_block - comment_lines_count
+                    )
+                    dst_contents.extend([
+                        x + "\n" for x in comment_lines[:comment_lines_to_consume]
+                    ])
+                    block_lines[1] = "\n".join(comment_lines[comment_lines_to_consume:])
+                    block_lines.pop(0)  # pop the block_lines[0] append
+                else:
+                    for block_line in block_lines:
+                        if not block_line.strip():
+                            dst_contents.append(block_line)
+                            consumed_empty_lines += 1
+                        else:
+                            break
+                    [block_lines.pop(0) for _ in range(consumed_empty_lines)]
             dst_contents.append(FORMAT_END)
+            end_ok = True
+        dst_contents.extend(block_lines)
     if not dst_contents:
         # Use decode_bytes to retrieve the correct source newline (CRLF or LF),
         # and check if normalized_content has more than one line
@@ -1315,6 +1378,16 @@ def _format_str_once(src_contents: str, *, mode: Mode) -> str:  # noqa: C901
         dst_contents_substr = dst_contents_str[
             dst_formatted_start_index + len(FORMAT_START) : dst_formatted_end_index
         ]
+
+        src_line_breaks = [0] + [
+            m.start() + 1 for m in re.finditer(r"\n", src_contents)
+        ]
+        format_start_line = mode.line_range[0] - 1
+        format_end_line = mode.line_range[1] + 1
+        index_of_line_before_format_start = src_line_breaks[format_start_line]
+        index_of_line_after_format_end = src_line_breaks[-format_end_line]
+        src_before_lines = src_contents[:index_of_line_before_format_start]
+        src_after_lines = src_contents[index_of_line_after_format_end:]
 
         return src_before_lines + dst_contents_substr + src_after_lines
 
