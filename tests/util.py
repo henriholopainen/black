@@ -279,17 +279,16 @@ def read_data_from_file(file_name: Path) -> Tuple[TestCaseArgs, str, str]:
     if _input and not _output:
         # If there's no output marker, treat the entire file as already pre-formatted.
         _output = _input[:]
-    source_data = "".join(_input).strip() + "\n"
-    output_data = "".join(_output).strip() + "\n"
+    source_contents = "".join(_input).strip() + "\n"
+    output_contents = "".join(_output).strip() + "\n"
     if args.mode.line_range:
         args.mode = replace(
             args.mode,
-            line_range=black.calculate_line_range_parameters(
-                args.mode.line_range,
-                [not bool(x.strip()) for x in source_data.split("\n")],
+            line_range=black.calculate_line_range(
+                args.mode.line_range, source_contents, args.mode
             ),
         )
-    return args, source_data, output_data
+    return args, source_contents, output_contents
 
 
 def read_jupyter_notebook(subdir_name: str, name: str, data: bool = True) -> str:

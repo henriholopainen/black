@@ -172,6 +172,27 @@ class Visitor(Generic[T]):
                 yield from self.visit(child)
 
 
+def line_span(node: NL) -> Tuple[int, int]:
+    if not node:
+        return (-1, -1)
+    start = node.get_lineno() or -1
+
+    while isinstance(node, Node):
+        if not node.children:
+            return (start, start)
+        node = node.children[-1]
+
+    end = node.lineno
+    # Whitespaces are special, as they can span multiple lines
+    if node.type in WHITESPACE:
+        next = following_leaf(node)
+        if next:
+            next_lineno = next.get_lineno()
+            end = next_lineno - 1 if next_lineno else end
+
+    return (start, end or -1)
+
+
 def whitespace(leaf: Leaf, *, complex_subscript: bool, mode: Mode) -> str:  # noqa: C901
     """Return whitespace prefix if needed for the given `leaf`.
 
@@ -405,6 +426,24 @@ def whitespace(leaf: Leaf, *, complex_subscript: bool, mode: Mode) -> str:  # no
             return NO
 
     return SPACE
+
+
+def following_leaf(node: Optional[LN]) -> Optional[Leaf]:
+    """Return the first leaf that follows `node`, if any."""
+    while node:
+        res = node.next_sibling
+        if res:
+            if isinstance(res, Leaf):
+                return res
+
+            try:
+                return list(res.leaves())[0]
+
+            except IndexError:
+                return None
+
+        node = node.parent
+    return None
 
 
 def preceding_leaf(node: Optional[LN]) -> Optional[Leaf]:
