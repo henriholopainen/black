@@ -115,7 +115,7 @@ def _adjust_end(
     return line
 
 
-def calculate_line_range(  # noqa: C901
+def calculate_line_range(
     lines: Tuple[int, int],
     src_contents: str,
     mode: Mode,
