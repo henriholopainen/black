@@ -17,6 +17,48 @@ def _validate_line_range_input(lines: Tuple[int, int], lines_in_file: int) -> No
         raise ValueError("Invalid --lines (start and end must be >0).")
 
 
+def _find_first_line(src_node: Node, line_number: int) -> int:
+    """Return the line number that starts the expression containing line_number"""
+    for node in src_node.post_order():
+        if not node or node.type in [token.INDENT, token.DEDENT]:
+            continue
+        node_start, node_end = line_span(node)
+        if node_start <= line_number and node_end >= line_number:
+            if node.type == token.NEWLINE:
+                line_number = node_start + 1
+                break
+            curr = node
+            prev = preceding_leaf(curr)
+            while prev and prev.type != token.NEWLINE:
+                curr = prev
+                prev = preceding_leaf(curr)
+            if curr:
+                line_number = curr.get_lineno() or line_number
+            break
+    return line_number
+
+
+def _find_last_line(src_node: Node, line_number: int) -> int:
+    """Return the line number that ends the expression containing line_number"""
+    for node in src_node.post_order():
+        if not node or node.type in [token.INDENT, token.DEDENT]:
+            continue
+        node_start, node_end = line_span(node)
+        if node_start <= line_number and node_end >= line_number:
+            if node.type == token.NEWLINE:
+                line_number = node_end
+                break
+            curr = node
+            next = following_leaf(curr)
+            while next and next.type != token.NEWLINE:
+                curr = next
+                next = following_leaf(curr)
+            if next:
+                line_number = next.get_lineno() or line_number
+            break
+    return line_number
+
+
 def calculate_line_range(  # noqa: C901
     lines: Tuple[int, int],
     src_contents: str,
@@ -35,43 +77,8 @@ def calculate_line_range(  # noqa: C901
         else src_node_input
     )
 
-    start_line, end_line = lines
-
-    # Find the first line that contains start_line after a line break
-    for node in src_node.post_order():
-        if not node or node.type in [token.INDENT, token.DEDENT]:
-            continue
-        node_start, node_end = line_span(node)
-        if node_start <= start_line and node_end >= start_line:
-            if node.type == token.NEWLINE:
-                start_line = node_start + 1
-                break
-            curr = node
-            prev = preceding_leaf(curr)
-            while prev and prev.type != token.NEWLINE:
-                curr = prev
-                prev = preceding_leaf(curr)
-            if curr:
-                start_line = curr.get_lineno() or start_line
-            break
-
-    # Find the last line that contains end_line before a line break
-    for node in src_node.post_order():
-        if not node or node.type in [token.INDENT, token.DEDENT]:
-            continue
-        node_start, node_end = line_span(node)
-        if node_start <= end_line and node_end >= end_line:
-            if node.type == token.NEWLINE:
-                end_line = node_end
-                break
-            curr = node
-            next = following_leaf(curr)
-            while next and next.type != token.NEWLINE:
-                curr = next
-                next = following_leaf(curr)
-            if next:
-                end_line = next.get_lineno() or end_line
-            break
+    start_line = _find_first_line(src_node, lines[0])
+    end_line = _find_last_line(src_node, lines[1])
 
     # Extend to cover neighbouring empty lines and FMT_OFF/FMT_ON comments
     while (
