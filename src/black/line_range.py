@@ -177,76 +177,91 @@ def inject_line_range_placeholders_to_formatted_code(
     dst_block_lines: List[List[str]] = []
     dst_block_last_line_numbers: List[int] = []
 
-    for dst_block in dst_blocks:
-        dst_block_line_numbers = [x.lineno for x in dst_block.original_line.leaves]
+    for block in dst_blocks:
+        dst_block_line_numbers = [x.lineno for x in block.original_line.leaves]
         last_line_number = max(dst_block_line_numbers)
-        if dst_block.original_line.leaves[0].type == STANDALONE_COMMENT:
-            # Standalone comment, possibly multiple lines
+        if block.original_line.leaves[0].type == STANDALONE_COMMENT:
+            # Standalone comments possibly span multiple lines
             last_line_number = (
                 standalone_comment_line_numbers.pop(0)
-                + dst_block.content_lines[0].count("\n")
+                + block.content_lines[0].count("\n")
                 - 1
             )
         dst_block_last_line_numbers.append(last_line_number)
-        dst_block_lines.append(dst_block.all_lines())
+        dst_block_lines.append(block.all_lines())
+
+    # Avoid checking for bounds with faux elements
     dst_block_last_line_numbers.append(-1)
     dst_block_lines.append([])
 
-    start_ok, end_ok = False, False
+    start_marked, end_marked = False, False
     first_line_to_format = line_range[0]
     last_line_to_format = src_contents.count("\n") - line_range[1]
+
     for index in range(len(dst_blocks)):
         block_lines = dst_block_lines[index]
         last_line_number_of_curr_block = dst_block_last_line_numbers[index]
         last_line_number_of_next_block = dst_block_last_line_numbers[index + 1]
-        if not start_ok and (
+
+        if not start_marked and (
+            # If we went past the line
             first_line_to_format < last_line_number_of_curr_block
             or (
+                # If we are on the line, but next block is on a different line
                 first_line_to_format == last_line_number_of_curr_block
                 and last_line_number_of_next_block != last_line_number_of_curr_block
             )
         ):
             dst_contents.append(FORMAT_START)
-            start_ok = True
+            start_marked = True
         if (
-            start_ok
-            and not end_ok
+            start_marked
+            and not end_marked
             and (
-                (last_line_to_format < last_line_number_of_curr_block)
+                # If we went past the line
+                last_line_to_format < last_line_number_of_curr_block
                 or (
+                    # If we are on the line, but next block is on a different line
                     last_line_to_format == last_line_number_of_curr_block
                     and last_line_number_of_next_block != last_line_number_of_curr_block
                 )
             )
         ):
             if last_line_to_format == last_line_number_of_curr_block:
+                # We are at the end of our last line, so everything goes before marker
                 dst_contents.extend(block_lines)
-                block_lines.clear()
-            else:
-                consumed_empty_lines = 0
-                is_standalone_comment_line = dst_block_lines[index][1].strip()[0] == "#"
-                if is_standalone_comment_line:
-                    dst_contents.append(block_lines[0])
-                    comment_lines = block_lines[1].split("\n")
-                    comment_lines_count = len(comment_lines) - 1
-                    comment_lines_to_consume = last_line_to_format - (
-                        last_line_number_of_curr_block - comment_lines_count
-                    )
-                    dst_contents.extend([
-                        x + "\n" for x in comment_lines[:comment_lines_to_consume]
-                    ])
-                    block_lines[1] = "\n".join(comment_lines[comment_lines_to_consume:])
-                    block_lines.pop(0)  # pop the block_lines[0] append
-                else:
-                    for block_line in block_lines:
-                        if not block_line.strip():
-                            dst_contents.append(block_line)
-                            consumed_empty_lines += 1
-                        else:
-                            break
-                    [block_lines.pop(0) for _ in range(consumed_empty_lines)]
+                dst_contents.append(FORMAT_END)
+                end_marked = True
+                continue
+
+            empty_lines_appended = False
+            if not block_lines[0].strip():
+                # Add empty lines from the formatting before marker
+                dst_contents.append(block_lines[0])
+                empty_lines_appended = True
+
+            is_fmt_off_line = block_lines[1].strip()[0] == "#"
+
+            if is_fmt_off_line:
+                # We know that this line is a fmt:off line and it will span multiple
+                # lines in the source because true standalone comments are only one
+                # line, and that is handled above. Add necessary amount of lines
+                # before marker
+                comment_lines = block_lines[1].split("\n")
+                comment_lines_count = len(comment_lines) - 1
+                comment_lines_to_consume = last_line_to_format - (
+                    last_line_number_of_curr_block - comment_lines_count
+                )
+                dst_contents.extend([
+                    x + "\n" for x in comment_lines[:comment_lines_to_consume]
+                ])
+                block_lines[1] = "\n".join(comment_lines[comment_lines_to_consume:])
+
             dst_contents.append(FORMAT_END)
-            end_ok = True
+            end_marked = True
+            if empty_lines_appended:
+                # Pop so we won't append the empty lines twice
+                block_lines.pop(0)
         dst_contents.extend(block_lines)
 
     return dst_contents
