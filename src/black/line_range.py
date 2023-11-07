@@ -209,14 +209,11 @@ def inject_line_range_placeholders_to_formatted_code(
         block_lines = dst_block_lines[index]
         last_line_number_of_curr_block = dst_block_last_line_numbers[index]
         last_line_number_of_next_block = dst_block_last_line_numbers[index + 1]
-        if (
-            not start_ok
-            and (
-                first_line_to_format < last_line_number_of_curr_block
-                or (
-                    first_line_to_format == last_line_number_of_curr_block
-                    and last_line_number_of_next_block != last_line_number_of_curr_block
-                )
+        if not start_ok and (
+            first_line_to_format < last_line_number_of_curr_block
+            or (
+                first_line_to_format == last_line_number_of_curr_block
+                and last_line_number_of_next_block != last_line_number_of_curr_block
             )
         ):
             dst_contents.append(FORMAT_START)
