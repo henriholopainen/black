@@ -181,15 +181,19 @@ def inject_line_range_placeholders_to_formatted_code(
 
     for block in dst_blocks:
         dst_block_line_numbers = [x.lineno for x in block.original_line.leaves]
-        last_line_number = max(dst_block_line_numbers)
-        if block.original_line.leaves[0].type == STANDALONE_COMMENT:
-            # Standalone comments possibly span multiple lines
-            last_line_number = (
-                standalone_comment_line_numbers.pop(0)
-                + block.content_lines[0].count("\n")
-                - 1
-            )
-        dst_block_last_line_numbers.append(last_line_number)
+        for leaf in block.original_line.leaves:
+            if leaf.type == STANDALONE_COMMENT:
+                # Standalone comments possibly span multiple lines
+                # If we have multiple identical comments, pick the later
+                content_line_index = [
+                    line.strip() for line in reversed(block.content_lines)
+                ].index(leaf.value) + 1
+                dst_block_line_numbers.append(
+                    standalone_comment_line_numbers.pop(0)
+                    + block.content_lines[-content_line_index].count("\n")
+                    - 1
+                )
+        dst_block_last_line_numbers.append(max(dst_block_line_numbers))
         dst_block_lines.append(block.all_lines())
 
     # Avoid checking for bounds with faux elements
