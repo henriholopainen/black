@@ -124,7 +124,7 @@ def calculate_line_range(
     lines: Tuple[int, int],
     src_contents: str,
     mode: Mode,
-    src_node_input: Optional[Node] = None,
+    src_node_input: Optional[Node] = None,  # Optimisation for tests
 ) -> Tuple[int, int]:
     lines_in_file = src_contents.count("\n")
     src_lines = src_contents.split("\n")
