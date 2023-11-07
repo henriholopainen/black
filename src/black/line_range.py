@@ -203,29 +203,27 @@ def inject_line_range_placeholders_to_formatted_code(
         last_line_number_of_curr_block = dst_block_last_line_numbers[index]
         last_line_number_of_next_block = dst_block_last_line_numbers[index + 1]
 
+        first_line_passed = first_line_to_format < last_line_number_of_curr_block
+        on_the_first_line_but_next_is_past = (
+            first_line_to_format == last_line_number_of_curr_block
+            and last_line_number_of_next_block != last_line_number_of_curr_block
+        )
+
+        last_line_passed = last_line_to_format < last_line_number_of_curr_block
+        on_the_last_line_but_next_is_past = (
+            last_line_to_format == last_line_number_of_curr_block
+            and last_line_number_of_next_block != last_line_number_of_curr_block
+        )
+
         if not start_marked and (
-            # If we went past the line
-            first_line_to_format < last_line_number_of_curr_block
-            or (
-                # If we are on the line, but next block is on a different line
-                first_line_to_format == last_line_number_of_curr_block
-                and last_line_number_of_next_block != last_line_number_of_curr_block
-            )
+            first_line_passed or on_the_first_line_but_next_is_past
         ):
             dst_contents.append(FORMAT_START)
             start_marked = True
         if (
             start_marked
             and not end_marked
-            and (
-                # If we went past the line
-                last_line_to_format < last_line_number_of_curr_block
-                or (
-                    # If we are on the line, but next block is on a different line
-                    last_line_to_format == last_line_number_of_curr_block
-                    and last_line_number_of_next_block != last_line_number_of_curr_block
-                )
-            )
+            and (last_line_passed or on_the_last_line_but_next_is_past)
         ):
             if last_line_to_format == last_line_number_of_curr_block:
                 # We are at the end of our last line, so everything goes before marker
@@ -262,6 +260,7 @@ def inject_line_range_placeholders_to_formatted_code(
             if empty_lines_appended:
                 # Pop so we won't append the empty lines twice
                 block_lines.pop(0)
+
         dst_contents.extend(block_lines)
 
     return dst_contents
