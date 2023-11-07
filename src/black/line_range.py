@@ -268,19 +268,18 @@ def inject_line_range_placeholders_to_formatted_code(
 def combine_format_changes_to_source(
     src_contents: str, dst_contents_list: List[str], line_range: Tuple[int, int]
 ) -> str:
+    """Combine start and end from source with formatted span marked by FORMAT_START
+    and FORMAT_END in dst_contents_list"""
     dst_contents = "".join(dst_contents_list)
-    dst_formatted_start_index = dst_contents.index(FORMAT_START)
-    dst_formatted_end_index = dst_contents.index(FORMAT_END)
-    dst_contents_substr = dst_contents[
-        dst_formatted_start_index + len(FORMAT_START) : dst_formatted_end_index
+    formatted_changes = dst_contents[
+        dst_contents.index(FORMAT_START)
+        + len(FORMAT_START) : dst_contents.index(FORMAT_END)
     ]
 
-    src_line_breaks = [0] + [m.start() + 1 for m in re.finditer(r"\n", src_contents)]
-    format_start_line = line_range[0] - 1
-    format_end_line = line_range[1] + 1
-    index_of_line_before_format_start = src_line_breaks[format_start_line]
-    index_of_line_after_format_end = src_line_breaks[-format_end_line]
-    src_before_lines = src_contents[:index_of_line_before_format_start]
-    src_after_lines = src_contents[index_of_line_after_format_end:]
+    src_line_break_locations = [0] + [
+        m.start() + 1 for m in re.finditer(r"\n", src_contents)
+    ]
+    unformatted_before = src_contents[: src_line_break_locations[line_range[0] - 1]]
+    unformatted_after = src_contents[src_line_break_locations[-(line_range[1] + 1)] :]
 
-    return src_before_lines + dst_contents_substr + src_after_lines
+    return unformatted_before + formatted_changes + unformatted_after
